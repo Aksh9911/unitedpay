@@ -9,6 +9,8 @@ const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err.message);
+  console.error(err.stack);
   systemErrorLogger.error('Uncaught exception', {
     errorType: 'UncaughtException',
     errorMessage: err.message,
