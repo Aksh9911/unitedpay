@@ -1,0 +1,346 @@
+'use strict';
+
+const axios = require('axios');
+const { getConfig } = require('../config/unitedpay.config');
+const { encryptPayload, decryptPayload } = require('../utils/aes.util');
+const { generateSignature, verifySignature } = require('../utils/signature.util');
+const { generateTradeNo } = require('../utils/tradeNo.util');
+const { maskSensitiveData } = require('../utils/mask.util');
+const {
+  appLogger,
+  payinRequestLogger,
+  payinResponseLogger,
+  payoutRequestLogger,
+  payoutResponseLogger,
+  payinErrorLogger,
+  payoutErrorLogger,
+  systemErrorLogger,
+  printPayinRequest,
+  printPayinResponse,
+  printPayoutRequest,
+  printPayoutResponse,
+  printBalanceQuery,
+} = require('../utils/logger');
+
+function currentTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }) {
+  const config = getConfig();
+  const url = `${config.baseUrl}${endpoint}`;
+  const isDebug = process.env.LOG_LEVEL === 'debug';
+
+  const innerWithMch = { ...innerPayload, mchNo: config.mchNo };
+  const encryptedPayload = encryptPayload(innerWithMch);
+  const sign = generateSignature(encryptedPayload, config.signKey);
+
+  const requestBody = {
+    mchNo: config.mchNo,
+    payload: encryptedPayload,
+    sign,
+  };
+
+  const decryptedStr = isDebug ? JSON.stringify(maskSensitiveData(innerWithMch)) : '[DEBUG_OFF]';
+  const timestamp = new Date().toISOString();
+
+  const reqLogEntry = {
+    timestamp,
+    traceId,
+    tradeNo: innerPayload.tradeNo || 'N/A',
+    merchantNo: config.mchNo,
+    amount: innerPayload.price || 'N/A',
+    endpoint,
+    encryptedPayload,
+    generatedSign: sign,
+    decryptedPayload: decryptedStr,
+    requestBody: isDebug ? JSON.stringify(requestBody) : '[DEBUG_OFF]',
+  };
+
+  if (logType === 'payin') {
+    payinRequestLogger.info('Payin request', reqLogEntry);
+    printPayinRequest({
+      traceId,
+      timestamp,
+      endpoint,
+      tradeNo: innerPayload.tradeNo || 'N/A',
+      amount: innerPayload.price || 'N/A',
+      encryptedPayload,
+      generatedSign: sign,
+      decryptedPayload: decryptedStr,
+    });
+  } else if (logType === 'payout') {
+    payoutRequestLogger.info('Payout request', reqLogEntry);
+    printPayoutRequest({
+      traceId,
+      timestamp,
+      endpoint,
+      tradeNo: innerPayload.tradeNo || 'N/A',
+      amount: innerPayload.price || 'N/A',
+      encryptedPayload,
+      generatedSign: sign,
+      decryptedPayload: decryptedStr,
+    });
+  } else {
+    appLogger.info('Balance query request', reqLogEntry);
+    printBalanceQuery({
+      traceId,
+      timestamp,
+      endpoint,
+      encryptedPayload,
+      generatedSign: sign,
+      decryptedPayload: decryptedStr,
+    });
+  }
+
+  const startTime = Date.now();
+  let axiosResponse;
+
+  try {
+    axiosResponse = await axios.post(url, requestBody, {
+      timeout: config.timeoutMs,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (axiosErr) {
+    const isTimeout = axiosErr.code === 'ECONNABORTED' || axiosErr.message.includes('timeout');
+    const err = new Error(isTimeout ? `Request timeout: ${endpoint}` : `Remote API call failed: ${axiosErr.message}`);
+    err.code = isTimeout ? 'REMOTE_TIMEOUT' : 'REMOTE_API_ERROR';
+    err.original = axiosErr;
+
+    const errEntry = {
+      timestamp: new Date().toISOString(),
+      traceId,
+      module: logType.toUpperCase(),
+      endpoint,
+      tradeNo: innerPayload.tradeNo || 'N/A',
+      errorType: err.code,
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPayload: reqLogEntry,
+      responsePayload: null,
+    };
+    if (logType === 'payin') payinErrorLogger.error('Payin request failed', errEntry);
+    else if (logType === 'payout') payoutErrorLogger.error('Payout request failed', errEntry);
+    systemErrorLogger.error('API call failed', errEntry);
+    throw err;
+  }
+
+  const processingTime = Date.now() - startTime;
+  const responseData = axiosResponse.data;
+
+  const encryptedResponse = responseData.payload || null;
+  const receivedSign = responseData.sign || null;
+
+  if (!encryptedResponse || !receivedSign) {
+    const err = new Error('Remote response missing payload or sign');
+    err.code = 'REMOTE_API_ERROR';
+    throw err;
+  }
+
+  const signValid = verifySignature(encryptedResponse, receivedSign, config.signKey);
+
+  if (!signValid) {
+    const err = new Error('Remote response signature verification failed');
+    err.code = 'INVALID_SIGNATURE';
+
+    const errEntry = {
+      timestamp: new Date().toISOString(),
+      traceId,
+      module: logType.toUpperCase(),
+      endpoint,
+      tradeNo: innerPayload.tradeNo || 'N/A',
+      errorType: err.code,
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      requestPayload: reqLogEntry,
+      responsePayload: { encryptedResponse, receivedSign },
+    };
+    if (logType === 'payin') payinErrorLogger.error('Payin signature invalid', errEntry);
+    else if (logType === 'payout') payoutErrorLogger.error('Payout signature invalid', errEntry);
+    systemErrorLogger.error('Signature verification failed', errEntry);
+    throw err;
+  }
+
+  const decryptedResponse = decryptPayload(encryptedResponse);
+  let parsedResponse;
+
+  try {
+    parsedResponse = JSON.parse(decryptedResponse);
+  } catch (e) {
+    const err = new Error('Failed to parse decrypted response as JSON');
+    err.code = 'AES_DECRYPT_ERROR';
+    throw err;
+  }
+
+  const resLogEntry = {
+    timestamp: new Date().toISOString(),
+    traceId,
+    tradeNo: parsedResponse.tradeNo || innerPayload.tradeNo || 'N/A',
+    httpStatus: axiosResponse.status,
+    encryptedResponse,
+    receivedSign,
+    verificationResult: 'VALID',
+    decryptedResponse: isDebug ? decryptedResponse : '[DEBUG_OFF]',
+    completeJson: isDebug ? JSON.stringify(parsedResponse) : '[DEBUG_OFF]',
+    processingTime,
+  };
+
+  if (logType === 'payin') {
+    payinResponseLogger.info('Payin response', resLogEntry);
+    printPayinResponse({
+      traceId,
+      timestamp: resLogEntry.timestamp,
+      tradeNo: resLogEntry.tradeNo,
+      httpStatus: axiosResponse.status,
+      encryptedResponse,
+      receivedSign,
+      verificationResult: 'VALID',
+      decryptedResponse: isDebug ? decryptedResponse : '[DEBUG_OFF]',
+    });
+  } else if (logType === 'payout') {
+    payoutResponseLogger.info('Payout response', resLogEntry);
+    printPayoutResponse({
+      traceId,
+      timestamp: resLogEntry.timestamp,
+      tradeNo: resLogEntry.tradeNo,
+      httpStatus: axiosResponse.status,
+      encryptedResponse,
+      receivedSign,
+      verificationResult: 'VALID',
+      decryptedResponse: isDebug ? decryptedResponse : '[DEBUG_OFF]',
+    });
+  } else {
+    appLogger.info('Balance query response', resLogEntry);
+  }
+
+  return parsedResponse;
+}
+
+async function createPayin(input, traceId) {
+  const config = getConfig();
+  const tradeNo = input.tradeNo || generateTradeNo('PAY');
+  const innerPayload = {
+    versionNo: '1',
+    mchNo: config.mchNo,
+    price: input.price,
+    orderDate: currentTimestamp(),
+    tradeNo,
+    notifyUrl: input.notifyUrl || config.notifyUrl,
+    callbackUrl: input.callbackUrl || config.callbackUrl,
+    payType: input.payType || '01',
+    payerName: input.payerName,
+    payMobile: input.payMobile,
+    payEmail: input.payEmail,
+  };
+
+  const result = await sendUnitedPayRequest({
+    endpoint: config.endpoints.payinCreate,
+    innerPayload,
+    traceId,
+    logType: 'payin',
+  });
+
+  return result;
+}
+
+async function queryPayin(input, traceId) {
+  const config = getConfig();
+  const innerPayload = {
+    versionNo: '1',
+    mchNo: config.mchNo,
+    tradeNo: input.tradeNo,
+  };
+
+  const result = await sendUnitedPayRequest({
+    endpoint: config.endpoints.payinQuery,
+    innerPayload,
+    traceId,
+    logType: 'payin',
+  });
+
+  return result;
+}
+
+async function createPayout(input, traceId) {
+  const config = getConfig();
+  const tradeNo = input.tradeNo || generateTradeNo('OUT');
+  const innerPayload = {
+    versionNo: '1',
+    mchNo: config.mchNo,
+    price: input.price,
+    orderDate: currentTimestamp(),
+    tradeNo,
+    notifyUrl: input.notifyUrl || config.notifyUrl,
+    mode: input.mode || 'S1',
+    accBankCode: input.accBankCode,
+    accCardNo: input.accCardNo,
+    accName: input.accName,
+    accTel: input.accTel,
+    accEmail: input.accEmail,
+    purpose: input.purpose,
+  };
+
+  const result = await sendUnitedPayRequest({
+    endpoint: config.endpoints.payoutCreate,
+    innerPayload,
+    traceId,
+    logType: 'payout',
+  });
+
+  return result;
+}
+
+async function queryPayout(input, traceId) {
+  const config = getConfig();
+  const innerPayload = {
+    versionNo: '1',
+    mchNo: config.mchNo,
+    tradeNo: input.tradeNo,
+  };
+
+  const result = await sendUnitedPayRequest({
+    endpoint: config.endpoints.payoutQuery,
+    innerPayload,
+    traceId,
+    logType: 'payout',
+  });
+
+  return result;
+}
+
+async function queryBalance(traceId) {
+  const config = getConfig();
+  const innerPayload = {
+    versionNo: '1',
+    mchNo: config.mchNo,
+  };
+
+  const result = await sendUnitedPayRequest({
+    endpoint: config.endpoints.balanceQuery,
+    innerPayload,
+    traceId,
+    logType: 'balance',
+  });
+
+  return {
+    versionNo: result.versionNo,
+    mchNo: result.mchNo,
+    settleInAmt: result.settleInAmt,
+    settleOutAmt: result.settleOutAmt,
+    curInAmt: result.curInAmt,
+    creditLines: result.creditLines,
+    curOutAmt: result.curOutAmt,
+    curAvailable: result.curAvailable,
+  };
+}
+
+module.exports = {
+  createPayin,
+  queryPayin,
+  createPayout,
+  queryPayout,
+  queryBalance,
+  sendUnitedPayRequest,
+};
