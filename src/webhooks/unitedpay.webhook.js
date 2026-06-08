@@ -12,6 +12,8 @@ const {
   isDuplicatePayout,
   markPayoutProcessed,
 } = require('../storage/webhookCache');
+const { updateRechargeStatus, getRechargeByOrderId } = require('../models/recharge.model');
+const { processDepositSuccess } = require('../services/platform.service');
 const {
   payinWebhookLogger,
   payoutWebhookLogger,
@@ -139,6 +141,53 @@ async function handlePayinWebhook(req, res) {
   }
 
   markPayinProcessed(tradeNo, status);
+
+  const isApproved = String(status).toUpperCase() === 'APPROVED';
+  const isFailed = String(status).toUpperCase() === 'FAILED' || String(status).toUpperCase() === 'REJECTED';
+
+  const dbStatus = isApproved ? 'success' : isFailed ? 'fail' : status.toLowerCase();
+
+  try {
+    await updateRechargeStatus(tradeNo, dbStatus);
+    payinWebhookLogger.info('Recharge status updated in DB', { traceId, tradeNo, dbStatus });
+  } catch (dbErr) {
+    payinErrorLogger.error('Failed to update recharge status in DB', {
+      traceId, tradeNo, dbStatus, error: dbErr.message,
+    });
+  }
+
+  if (isApproved) {
+    let recharge = null;
+    try {
+      recharge = await getRechargeByOrderId(tradeNo);
+    } catch (dbErr) {
+      payinErrorLogger.error('Failed to fetch recharge record for platform call', {
+        traceId, tradeNo, error: dbErr.message,
+      });
+    }
+
+    if (recharge) {
+      const result = await processDepositSuccess({
+        userId: recharge.userId,
+        amount: Number(recharge.recharge_amount),
+        orderId: tradeNo,
+        traceId,
+      });
+
+      payinWebhookLogger.info('Platform deposit flow completed', {
+        traceId,
+        tradeNo,
+        userId: recharge.userId,
+        depositCreated: result.depositCreated,
+        walletUpdated: result.walletUpdated,
+      });
+    } else {
+      payinErrorLogger.error('No recharge record found for APPROVED webhook — platform APIs skipped', {
+        traceId, tradeNo,
+      });
+    }
+  }
+
   return res.status(200).send('success');
 }
 

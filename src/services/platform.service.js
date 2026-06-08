@@ -1,0 +1,177 @@
+'use strict';
+
+const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
+const { appLogger, systemErrorLogger } = require('../utils/logger');
+
+const PLATFORM_BASE_URL = process.env.PLATFORM_API_BASE_URL || 'https://api.rollix777.com';
+
+function getPlatformHeaders(traceId) {
+  return {
+    'Content-Type': 'application/json',
+    'X-Correlation-ID': traceId || uuidv4(),
+  };
+}
+
+async function createDepositRecord({ userId, amount, orderId, traceId }) {
+  const url = `${PLATFORM_BASE_URL}/api/user/deposit`;
+  const body = {
+    userId,
+    amount,
+    cryptoname: 'INR',
+    orderid: orderId,
+  };
+
+  appLogger.info('Platform API: createDepositRecord request', {
+    traceId,
+    url,
+    body,
+    timestamp: new Date().toISOString(),
+  });
+
+  const SEP = '====================================';
+  console.log(`\n${SEP}`);
+  console.log('  PLATFORM API — CREATE DEPOSIT');
+  console.log(SEP);
+  console.log(`  TraceId : ${traceId}`);
+  console.log(`  UserId  : ${userId}`);
+  console.log(`  OrderId : ${orderId}`);
+  console.log(`  Amount  : ${amount}`);
+  console.log(`  URL     : POST ${url}`);
+  console.log(`${SEP}\n`);
+
+  const response = await axios.post(url, body, {
+    headers: getPlatformHeaders(traceId),
+    timeout: 15000,
+  });
+
+  appLogger.info('Platform API: createDepositRecord response', {
+    traceId,
+    orderId,
+    status: response.status,
+    data: response.data,
+    timestamp: new Date().toISOString(),
+  });
+
+  if (!response.data || response.data.success !== true) {
+    const err = new Error(`Platform deposit API returned success=false for orderId: ${orderId}`);
+    err.code = 'PLATFORM_DEPOSIT_FAILED';
+    throw err;
+  }
+
+  console.log(`\n${SEP}`);
+  console.log('  PLATFORM API — DEPOSIT CREATED ✓');
+  console.log(SEP);
+  console.log(`  TraceId : ${traceId}`);
+  console.log(`  OrderId : ${orderId}`);
+  console.log(`  Response: ${JSON.stringify(response.data)}`);
+  console.log(`${SEP}\n`);
+
+  return response.data;
+}
+
+async function updateWalletBalance({ userId, amount, traceId }) {
+  const url = `${PLATFORM_BASE_URL}/api/user/wallet/balance`;
+  const body = {
+    userId,
+    cryptoname: 'INR',
+    balance: amount,
+  };
+
+  appLogger.info('Platform API: updateWalletBalance request', {
+    traceId,
+    url,
+    body,
+    timestamp: new Date().toISOString(),
+  });
+
+  const SEP = '====================================';
+  console.log(`\n${SEP}`);
+  console.log('  PLATFORM API — UPDATE WALLET');
+  console.log(SEP);
+  console.log(`  TraceId : ${traceId}`);
+  console.log(`  UserId  : ${userId}`);
+  console.log(`  Amount  : ${amount}`);
+  console.log(`  URL     : PUT ${url}`);
+  console.log(`${SEP}\n`);
+
+  const response = await axios.put(url, body, {
+    headers: getPlatformHeaders(traceId),
+    timeout: 15000,
+  });
+
+  appLogger.info('Platform API: updateWalletBalance response', {
+    traceId,
+    userId,
+    status: response.status,
+    data: response.data,
+    timestamp: new Date().toISOString(),
+  });
+
+  if (!response.data || response.data.success !== true) {
+    const err = new Error(`Platform wallet API returned success=false for userId: ${userId}`);
+    err.code = 'PLATFORM_WALLET_FAILED';
+    throw err;
+  }
+
+  console.log(`\n${SEP}`);
+  console.log('  PLATFORM API — WALLET UPDATED ✓');
+  console.log(SEP);
+  console.log(`  TraceId : ${traceId}`);
+  console.log(`  UserId  : ${userId}`);
+  console.log(`  Response: ${JSON.stringify(response.data)}`);
+  console.log(`${SEP}\n`);
+
+  return response.data;
+}
+
+async function processDepositSuccess({ userId, amount, orderId, traceId }) {
+  const SEP = '====================================';
+
+  let depositResult;
+  try {
+    depositResult = await createDepositRecord({ userId, amount, orderId, traceId });
+  } catch (err) {
+    systemErrorLogger.error('Platform deposit creation failed — wallet NOT updated', {
+      traceId,
+      orderId,
+      userId,
+      amount,
+      errorType: err.code || 'PLATFORM_DEPOSIT_ERROR',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      timestamp: new Date().toISOString(),
+    });
+    console.error(`\n[CRITICAL] Platform deposit API failed. Wallet NOT credited. OrderId: ${orderId} | ${err.message}\n`);
+    return { depositCreated: false, walletUpdated: false };
+  }
+
+  try {
+    await updateWalletBalance({ userId, amount, traceId });
+    return { depositCreated: true, walletUpdated: true };
+  } catch (err) {
+    systemErrorLogger.error('platform_deposit_wallet_mismatch — deposit created but wallet NOT credited', {
+      traceId,
+      orderId,
+      userId,
+      amount,
+      errorType: 'platform_deposit_wallet_mismatch',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      timestamp: new Date().toISOString(),
+      action: 'MANUAL_INTERVENTION_REQUIRED',
+    });
+    console.error(`\n${SEP}`);
+    console.error('  [CRITICAL] platform_deposit_wallet_mismatch');
+    console.error(SEP);
+    console.error(`  OrderId : ${orderId}`);
+    console.error(`  UserId  : ${userId}`);
+    console.error(`  Amount  : ${amount}`);
+    console.error(`  Deposit record EXISTS but wallet NOT credited.`);
+    console.error(`  *** MANUAL INTERVENTION REQUIRED ***`);
+    console.error(`${SEP}\n`);
+    return { depositCreated: true, walletUpdated: false };
+  }
+}
+
+module.exports = { processDepositSuccess, createDepositRecord, updateWalletBalance };

@@ -8,6 +8,10 @@ const payinCreateSchema = Joi.object({
     'number.positive': 'price must be positive',
     'any.required': 'price is required',
   }),
+  userId: Joi.number().integer().positive().required().messages({
+    'number.base': 'userId must be a number',
+    'any.required': 'userId is required',
+  }),
   tradeNo: Joi.string().optional(),
   notifyUrl: Joi.string().uri().optional().messages({
     'string.uri': 'notifyUrl must be a valid URL',

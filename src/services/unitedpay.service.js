@@ -2,6 +2,7 @@
 
 const axios = require('axios');
 const { getConfig } = require('../config/unitedpay.config');
+const { insertRecharge } = require('../models/recharge.model');
 const { encryptPayload, decryptPayload } = require('../utils/aes.util');
 const { generateSignature, verifySignature } = require('../utils/signature.util');
 const { generateTradeNo } = require('../utils/tradeNo.util');
@@ -220,7 +221,7 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
 
 async function createPayin(input, traceId) {
   const config = getConfig();
-  const tradeNo = input.tradeNo || generateTradeNo('PAY');
+  const tradeNo = input.tradeNo || generateTradeNo();
   const innerPayload = {
     versionNo: '1',
     mchNo: config.mchNo,
@@ -241,6 +242,33 @@ async function createPayin(input, traceId) {
     traceId,
     logType: 'payin',
   });
+
+  try {
+    await insertRecharge({
+      rechargeId: tradeNo,
+      orderId: tradeNo,
+      userId: input.userId,
+      amount: input.price,
+    });
+    const SEP = '====================================';
+    console.log(`\n${SEP}`);
+    console.log('  RECHARGE TABLE INSERT SUCCESS');
+    console.log(SEP);
+    console.log(`  TraceId   : ${traceId}`);
+    console.log(`  OrderId   : ${tradeNo}`);
+    console.log(`  UserId    : ${input.userId}`);
+    console.log(`  Amount    : ${input.price}`);
+    console.log(`  Status    : pending`);
+    console.log(`  Timestamp : ${new Date().toISOString()}`);
+    console.log(`${SEP}\n`);
+  } catch (dbErr) {
+    console.error(`[DB ERROR] Recharge insert failed for OrderId: ${tradeNo} | ${dbErr.message}`);
+    appLogger.error('DB insert failed after payin create', {
+      traceId,
+      tradeNo,
+      error: dbErr.message,
+    });
+  }
 
   return result;
 }
@@ -265,7 +293,7 @@ async function queryPayin(input, traceId) {
 
 async function createPayout(input, traceId) {
   const config = getConfig();
-  const tradeNo = input.tradeNo || generateTradeNo('OUT');
+  const tradeNo = input.tradeNo || generateTradeNo();
   const innerPayload = {
     versionNo: '1',
     mchNo: config.mchNo,

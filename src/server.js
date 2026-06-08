@@ -34,6 +34,9 @@ async function start() {
     const { getConfig } = require('./config/unitedpay.config');
     getConfig();
 
+    const { testConnection } = require('./config/db.config');
+    await testConnection();
+
     const server = app.listen(PORT, () => {
       appLogger.info(`UnitedPay Gateway started`, {
         port: PORT,
