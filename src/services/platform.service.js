@@ -48,14 +48,25 @@ async function createDepositRecord({ userId, amount, orderId, traceId }) {
   appLogger.info('Platform API: createDepositRecord response', {
     traceId,
     orderId,
-    status: response.status,
+    httpStatus: response.status,
     data: response.data,
     timestamp: new Date().toISOString(),
   });
 
-  if (!response.data || response.data.success !== true) {
-    const err = new Error(`Platform deposit API returned success=false for orderId: ${orderId}`);
+  const SEP2 = '====================================';
+  console.log(`\n${SEP2}`);
+  console.log('  PLATFORM API — DEPOSIT RAW RESPONSE');
+  console.log(SEP2);
+  console.log(`  TraceId    : ${traceId}`);
+  console.log(`  OrderId    : ${orderId}`);
+  console.log(`  HttpStatus : ${response.status}`);
+  console.log(`  RawData    : ${JSON.stringify(response.data)}`);
+  console.log(`${SEP2}\n`);
+
+  if (response.status !== 200 || !response.data || !response.data.message) {
+    const err = new Error(`Platform deposit API failed for orderId: ${orderId}`);
     err.code = 'PLATFORM_DEPOSIT_FAILED';
+    err.responseData = response.data;
     throw err;
   }
 
@@ -108,9 +119,10 @@ async function updateWalletBalance({ userId, amount, traceId }) {
     timestamp: new Date().toISOString(),
   });
 
-  if (!response.data || response.data.success !== true) {
-    const err = new Error(`Platform wallet API returned success=false for userId: ${userId}`);
+  if (response.status !== 200 || !response.data || !response.data.message) {
+    const err = new Error(`Platform wallet API failed for userId: ${userId}`);
     err.code = 'PLATFORM_WALLET_FAILED';
+    err.responseData = response.data;
     throw err;
   }
 
@@ -142,7 +154,10 @@ async function processDepositSuccess({ userId, amount, orderId, traceId }) {
       stackTrace: err.stack,
       timestamp: new Date().toISOString(),
     });
-    console.error(`\n[CRITICAL] Platform deposit API failed. Wallet NOT credited. OrderId: ${orderId} | ${err.message}\n`);
+    console.error(`\n[CRITICAL] Platform deposit API failed. Wallet NOT credited.`);
+    console.error(`  OrderId      : ${orderId}`);
+    console.error(`  Error        : ${err.message}`);
+    console.error(`  ResponseData : ${JSON.stringify(err.responseData || null)}\n`);
     return { depositCreated: false, walletUpdated: false };
   }
 
