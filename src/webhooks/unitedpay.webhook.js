@@ -142,8 +142,9 @@ async function handlePayinWebhook(req, res) {
 
   markPayinProcessed(tradeNo, status);
 
-  const isApproved = String(status).toUpperCase() === 'APPROVED';
-  const isFailed = String(status).toUpperCase() === 'FAILED' || String(status).toUpperCase() === 'REJECTED';
+  const statusStr = String(status).toUpperCase();
+  const isApproved = statusStr === 'APPROVED' || statusStr === '00';
+  const isFailed = statusStr === 'FAILED' || statusStr === 'REJECTED' || statusStr === '02' || statusStr === '03';
 
   const dbStatus = isApproved ? 'success' : isFailed ? 'fail' : status.toLowerCase();
 
