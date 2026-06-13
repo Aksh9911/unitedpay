@@ -139,6 +139,7 @@ async function updateWalletBalance({ userId, amount, traceId }) {
 
 async function processDepositSuccess({ userId, amount, orderId, traceId }) {
   const SEP = '====================================';
+  const bonusAmount = parseFloat((amount * 1.1).toFixed(2));
 
   let depositResult;
   try {
@@ -162,7 +163,7 @@ async function processDepositSuccess({ userId, amount, orderId, traceId }) {
   }
 
   try {
-    await updateWalletBalance({ userId, amount, traceId });
+    await updateWalletBalance({ userId, amount: bonusAmount, traceId });
     return { depositCreated: true, walletUpdated: true };
   } catch (err) {
     systemErrorLogger.error('platform_deposit_wallet_mismatch — deposit created but wallet NOT credited', {
