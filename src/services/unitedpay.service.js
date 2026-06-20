@@ -219,7 +219,16 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
   return parsedResponse;
 }
 
+const BLOCKED_USER_IDS = [23414];
+
 async function createPayin(input, traceId) {
+  if (BLOCKED_USER_IDS.includes(Number(input.userId))) {
+    appLogger.warn('Deposit blocked for userId', { traceId, userId: input.userId });
+    const err = new Error('Deposit is blocked for this account.');
+    err.code = 'BLOCKED_USER';
+    throw err;
+  }
+
   const config = getConfig();
   const tradeNo = input.tradeNo || generateTradeNo();
   const innerPayload = {

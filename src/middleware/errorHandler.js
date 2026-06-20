@@ -12,6 +12,7 @@ const ERROR_MAP = {
   REMOTE_TIMEOUT: { status: 504, message: 'Remote API timeout' },
   INVALID_PAYLOAD: { status: 400, message: 'Invalid payload' },
   WEBHOOK_ERROR: { status: 400, message: 'Webhook processing error' },
+  BLOCKED_USER: { status: 403, message: 'Deposit is blocked for this account.' },
 };
 
 function errorHandler(err, req, res, next) {
