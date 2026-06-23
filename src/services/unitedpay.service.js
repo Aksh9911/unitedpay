@@ -156,6 +156,18 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
   console.log(`  RawData    : ${JSON.stringify(responseData)}`);
   console.log(`====================================\n`);
 
+  // Check if this is an error response (different format)
+  if (responseData.state === 'Failed' || responseData.code) {
+    console.error(`\n[ERROR] UnitedPay returned error response`);
+    console.error(`  State   : ${responseData.state}`);
+    console.error(`  Message : ${responseData.message}`);
+    console.error(`  Code    : ${responseData.code}\n`);
+    const err = new Error(`UnitedPay error: ${responseData.message} (Code: ${responseData.code})`);
+    err.code = 'REMOTE_API_ERROR';
+    err.unitedPayCode = responseData.code;
+    throw err;
+  }
+
   const encryptedResponse = responseData.payload || null;
   const receivedSign = responseData.sign || null;
 
