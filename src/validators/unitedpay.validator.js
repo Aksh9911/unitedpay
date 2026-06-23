@@ -44,6 +44,10 @@ const payoutCreateSchema = Joi.object({
     'number.positive': 'price must be positive',
     'any.required': 'price is required',
   }),
+  withdrawId: Joi.string().required().messages({
+    'string.base': 'withdrawId must be a string',
+    'any.required': 'withdrawId is required',
+  }),
   tradeNo: Joi.string().optional(),
   notifyUrl: Joi.string().uri().optional().messages({
     'string.uri': 'notifyUrl must be a valid URL',

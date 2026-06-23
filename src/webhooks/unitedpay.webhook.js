@@ -13,6 +13,7 @@ const {
   markPayoutProcessed,
 } = require('../storage/webhookCache');
 const { updateRechargeStatus, getRechargeByOrderId } = require('../models/recharge.model');
+const { updateWithdrawlStatusByTradeNo } = require('../models/withdrawl.model');
 const { processDepositSuccess } = require('../services/platform.service');
 const {
   payinWebhookLogger,
@@ -306,6 +307,26 @@ async function handlePayoutWebhook(req, res) {
 
   if (isDup) {
     return res.status(200).send('00000');
+  }
+
+  // Update withdrawl status in DB based on tradeNo
+  const statusStr = String(status).toUpperCase();
+  let dbStatus;
+  if (statusStr === '00') {
+    dbStatus = 1; // Success
+  } else if (statusStr === '02' || statusStr === '03') {
+    dbStatus = 2; // Failed/Rejected
+  } else {
+    dbStatus = 0; // Pending/Other
+  }
+
+  try {
+    await updateWithdrawlStatusByTradeNo(tradeNo, dbStatus);
+    payoutWebhookLogger.info('Withdrawl status updated in DB', { traceId, tradeNo, dbStatus });
+  } catch (dbErr) {
+    payoutErrorLogger.error('Failed to update withdrawl status in DB', {
+      traceId, tradeNo, dbStatus, error: dbErr.message,
+    });
   }
 
   markPayoutProcessed(tradeNo, status);

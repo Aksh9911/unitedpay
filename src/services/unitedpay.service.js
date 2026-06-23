@@ -3,6 +3,7 @@
 const axios = require('axios');
 const { getConfig } = require('../config/unitedpay.config');
 const { insertRecharge } = require('../models/recharge.model');
+const { insertWithdrawl } = require('../models/withdrawl.model');
 const { encryptPayload, decryptPayload } = require('../utils/aes.util');
 const { generateSignature, verifySignature } = require('../utils/signature.util');
 const { generateTradeNo } = require('../utils/tradeNo.util');
@@ -325,6 +326,20 @@ async function createPayout(input, traceId) {
     traceId,
     logType: 'payout',
   });
+
+  try {
+    await insertWithdrawl({
+      withdrawId: input.withdrawId,
+      tradeNo,
+    });
+  } catch (dbErr) {
+    appLogger.error('DB insert failed after payout create', {
+      traceId,
+      tradeNo,
+      withdrawId: input.withdrawId,
+      error: dbErr.message,
+    });
+  }
 
   return result;
 }
