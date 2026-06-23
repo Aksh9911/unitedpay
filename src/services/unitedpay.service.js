@@ -147,10 +147,22 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
   const processingTime = Date.now() - startTime;
   const responseData = axiosResponse.data;
 
+  // Log the raw response from UnitedPay for debugging
+  console.log(`\n====================================`);
+  console.log(`  UNITEDPAY RAW RESPONSE DATA`);
+  console.log(`====================================`);
+  console.log(`  TraceId    : ${traceId}`);
+  console.log(`  HttpStatus : ${axiosResponse.status}`);
+  console.log(`  RawData    : ${JSON.stringify(responseData)}`);
+  console.log(`====================================\n`);
+
   const encryptedResponse = responseData.payload || null;
   const receivedSign = responseData.sign || null;
 
   if (!encryptedResponse || !receivedSign) {
+    console.error(`\n[ERROR] Missing payload or sign in response`);
+    console.error(`  Payload: ${encryptedResponse}`);
+    console.error(`  Sign   : ${receivedSign}\n`);
     const err = new Error('Remote response missing payload or sign');
     err.code = 'REMOTE_API_ERROR';
     throw err;
