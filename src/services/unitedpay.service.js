@@ -107,6 +107,20 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
     });
   } catch (axiosErr) {
     const isTimeout = axiosErr.code === 'ECONNABORTED' || axiosErr.message.includes('timeout');
+    const errorResponse = axiosErr.response?.data || null;
+    const httpStatus = axiosErr.response?.status || null;
+    
+    // Log the actual error response from UnitedPay
+    console.error(`\n====================================`);
+    console.error(`  UNITEDPAY API ERROR RESPONSE`);
+    console.error(`====================================`);
+    console.error(`  TraceId    : ${traceId}`);
+    console.error(`  Endpoint   : ${endpoint}`);
+    console.error(`  HttpStatus : ${httpStatus}`);
+    console.error(`  Error      : ${axiosErr.message}`);
+    console.error(`  RawResp    : ${JSON.stringify(errorResponse)}`);
+    console.error(`====================================\n`);
+
     const err = new Error(isTimeout ? `Request timeout: ${endpoint}` : `Remote API call failed: ${axiosErr.message}`);
     err.code = isTimeout ? 'REMOTE_TIMEOUT' : 'REMOTE_API_ERROR';
     err.original = axiosErr;
@@ -121,7 +135,8 @@ async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }
       errorMessage: err.message,
       stackTrace: err.stack,
       requestPayload: reqLogEntry,
-      responsePayload: null,
+      responsePayload: errorResponse,
+      httpStatus,
     };
     if (logType === 'payin') payinErrorLogger.error('Payin request failed', errEntry);
     else if (logType === 'payout') payoutErrorLogger.error('Payout request failed', errEntry);
