@@ -4,7 +4,7 @@ const { pool } = require('../config/db.config');
 const { appLogger } = require('../utils/logger');
 
 async function insertWithdrawl({ withdrawId, tradeNo }) {
-  const sql = `UPDATE withdrawl SET morder_id = ? WHERE withdrawId = ?`;
+  const sql = `UPDATE withdrawl SET morder_id = ? WHERE id = ?`;
   const params = [tradeNo, withdrawId];
 
   try {
