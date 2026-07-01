@@ -4,15 +4,15 @@ const { pool } = require('../config/db.config');
 const { appLogger } = require('../utils/logger');
 
 async function insertWithdrawl({ withdrawId, tradeNo }) {
-  const sql = `INSERT INTO withdrawl (withdrawId, morder_id) VALUES (?, ?)`;
-  const params = [withdrawId, tradeNo];
+  const sql = `UPDATE withdrawl SET morder_id = ? WHERE withdrawId = ?`;
+  const params = [tradeNo, withdrawId];
 
   try {
     const [result] = await pool.execute(sql, params);
-    appLogger.info('Withdrawl record inserted', { withdrawId, tradeNo });
+    appLogger.info('Withdrawl morder_id updated', { withdrawId, morder_id: tradeNo, affectedRows: result.affectedRows });
     return result;
   } catch (err) {
-    appLogger.error('Failed to insert withdrawl record', { error: err.message, withdrawId, tradeNo });
+    appLogger.error('Failed to update withdrawl morder_id', { error: err.message, withdrawId, tradeNo });
     throw err;
   }
 }
