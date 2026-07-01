@@ -65,9 +65,8 @@ const payoutCreateSchema = Joi.object({
   accTel: Joi.string().required().messages({
     'any.required': 'accTel is required',
   }),
-  accEmail: Joi.string().email().required().messages({
+  accEmail: Joi.string().email().optional().allow('').messages({
     'string.email': 'accEmail must be a valid email',
-    'any.required': 'accEmail is required',
   }),
   purpose: Joi.string().required().messages({
     'any.required': 'purpose is required',
