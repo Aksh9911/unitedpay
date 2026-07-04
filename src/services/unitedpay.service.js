@@ -355,7 +355,7 @@ async function createPayout(input, traceId) {
     accCardNo: input.accCardNo,
     accName: input.accName,
     accTel: input.accTel,
-    accEmail: input.accEmail,
+    accEmail: 'admin@rollix777.com',
     purpose: input.purpose,
   };
 
