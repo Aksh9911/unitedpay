@@ -26,8 +26,10 @@ const {
 
 function currentTimestamp() {
   const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // IST = UTC+5:30 in milliseconds
+  const istTime = new Date(now.getTime() + istOffset);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${istTime.getFullYear()}${pad(istTime.getMonth() + 1)}${pad(istTime.getDate())}${pad(istTime.getHours())}${pad(istTime.getMinutes())}${pad(istTime.getSeconds())}`;
 }
 
 async function sendUnitedPayRequest({ endpoint, innerPayload, traceId, logType }) {
