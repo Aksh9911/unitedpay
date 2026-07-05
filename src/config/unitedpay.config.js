@@ -7,6 +7,7 @@ function getConfig() {
   const encKey = process.env.UNITEDPAY_ENC_KEY;
   const callbackUrl = process.env.UNITEDPAY_CALLBACK_URL;
   const notifyUrl = process.env.UNITEDPAY_NOTIFY_URL;
+  const payoutNotifyUrl = process.env.UNITEDPAY_PAYOUT_NOTIFY_URL;
 
   if (!baseUrl) throw new Error('UNITEDPAY_BASE_URL is not set');
   if (!mchNo) throw new Error('UNITEDPAY_MCH_NO is not set');
@@ -14,6 +15,7 @@ function getConfig() {
   if (!encKey) throw new Error('UNITEDPAY_ENC_KEY is not set');
   if (!callbackUrl) throw new Error('UNITEDPAY_CALLBACK_URL is not set');
   if (!notifyUrl) throw new Error('UNITEDPAY_NOTIFY_URL is not set');
+  if (!payoutNotifyUrl) throw new Error('UNITEDPAY_PAYOUT_NOTIFY_URL is not set');
 
   return {
     baseUrl,
@@ -22,6 +24,7 @@ function getConfig() {
     encKey,
     callbackUrl,
     notifyUrl,
+    payoutNotifyUrl,
     endpoints: {
       payinCreate: '/ws/trans/nocard/makeOrder',
       payinQuery: '/ws/trans/nocard/orderQuery',

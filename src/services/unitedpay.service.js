@@ -351,7 +351,7 @@ async function createPayout(input, traceId) {
     price: input.price,
     orderDate: currentTimestamp(),
     tradeNo,
-    notifyUrl: input.notifyUrl || config.notifyUrl,
+    notifyUrl: input.notifyUrl || config.payoutNotifyUrl,
     mode: input.mode || 'S1',
     accBankCode: input.accBankCode,
     accCardNo: input.accCardNo,
