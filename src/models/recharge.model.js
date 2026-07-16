@@ -8,9 +8,12 @@ function generateMobile() {
 }
 
 async function insertRecharge({ rechargeId, orderId, userId, amount }) {
+  // Store IST date/time — toISOString() is UTC and rolls date back before 05:30 IST
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = now.toTimeString().slice(0, 8);
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const ist = new Date(now.getTime() + istOffsetMs);
+  const date = ist.toISOString().slice(0, 10);
+  const time = ist.toISOString().slice(11, 19);
 
   const sql = `
     INSERT INTO recharge
