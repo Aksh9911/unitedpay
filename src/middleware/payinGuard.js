@@ -9,8 +9,8 @@ const payinRateLimiter = rateLimit({
   max: 5, // 5 attempts per window
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
-  skip: (req) => req.method !== 'POST',
+  keyGenerator: (req) => String(req.body.userId),
+  skip: (req) => req.method !== 'POST' || !req.body?.userId,
   handler: (req, res, next, options) => {
     appLogger.warn('Payin rate limit exceeded', {
       userId: req.body?.userId,
