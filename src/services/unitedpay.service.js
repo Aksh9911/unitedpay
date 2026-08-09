@@ -382,7 +382,7 @@ async function createPayout(input, traceId) {
     });
   }
 
-  return result;
+  return { ...result, tradeNo };
 }
 
 async function queryPayout(input, traceId) {
