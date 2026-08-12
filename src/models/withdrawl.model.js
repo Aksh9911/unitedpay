@@ -40,4 +40,20 @@ async function updateWithdrawlStatusByTradeNo(tradeNo, status) {
   }
 }
 
-module.exports = { insertWithdrawl, getWithdrawlByWithdrawId, updateWithdrawlStatusByTradeNo };
+async function getWithdrawlByMorderId(morderId) {
+  const sql = `SELECT id, userId, balance, cryptoname, status, morder_id FROM withdrawl WHERE morder_id = ? LIMIT 1`;
+  try {
+    const [rows] = await pool.execute(sql, [morderId]);
+    return rows[0] || null;
+  } catch (err) {
+    appLogger.error('Failed to fetch withdrawl by morder_id', { error: err.message, morderId });
+    throw err;
+  }
+}
+
+module.exports = {
+  insertWithdrawl,
+  getWithdrawlByWithdrawId,
+  updateWithdrawlStatusByTradeNo,
+  getWithdrawlByMorderId,
+};

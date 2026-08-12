@@ -13,8 +13,8 @@ const {
   markPayoutProcessed,
 } = require('../storage/webhookCache');
 const { updateRechargeStatus, getRechargeByOrderId } = require('../models/recharge.model');
-const { updateWithdrawlStatusByTradeNo } = require('../models/withdrawl.model');
-const { processDepositSuccess } = require('../services/platform.service');
+const { updateWithdrawlStatusByTradeNo, getWithdrawlByMorderId } = require('../models/withdrawl.model');
+const { processDepositSuccess, refundFailedPayout } = require('../services/platform.service');
 const {
   payinWebhookLogger,
   payoutWebhookLogger,
@@ -321,8 +321,56 @@ async function handlePayoutWebhook(req, res) {
   }
 
   try {
-    await updateWithdrawlStatusByTradeNo(tradeNo, dbStatus);
-    payoutWebhookLogger.info('Withdrawl status updated in DB', { traceId, tradeNo, dbStatus });
+    if (dbStatus === 2) {
+      const withdrawl = await getWithdrawlByMorderId(tradeNo);
+
+      if (!withdrawl) {
+        payoutErrorLogger.error('Payout failed but withdrawl not found for refund', {
+          traceId, tradeNo,
+        });
+        await updateWithdrawlStatusByTradeNo(tradeNo, dbStatus);
+      } else if (Number(withdrawl.status) === 2) {
+        payoutWebhookLogger.info('Already failed — skip refund', {
+          traceId, tradeNo, withdrawId: withdrawl.id,
+        });
+      } else {
+        try {
+          await refundFailedPayout({
+            userId: withdrawl.userId,
+            amount: withdrawl.balance,
+            cryptoname: withdrawl.cryptoname || 'INR',
+            withdrawId: withdrawl.id,
+            morderId: tradeNo,
+            traceId,
+          });
+          payoutWebhookLogger.info('Wallet refunded after failed/rejected payout', {
+            traceId,
+            tradeNo,
+            withdrawId: withdrawl.id,
+            userId: withdrawl.userId,
+            amount: withdrawl.balance,
+          });
+        } catch (refundErr) {
+          payoutErrorLogger.error('CRITICAL: Payout failed but wallet refund FAILED', {
+            traceId,
+            tradeNo,
+            withdrawId: withdrawl.id,
+            userId: withdrawl.userId,
+            amount: withdrawl.balance,
+            error: refundErr.message,
+          });
+          return res.status(200).send('00000');
+        }
+
+        await updateWithdrawlStatusByTradeNo(tradeNo, dbStatus);
+        payoutWebhookLogger.info('Withdrawl status updated after refund', {
+          traceId, tradeNo, dbStatus,
+        });
+      }
+    } else {
+      await updateWithdrawlStatusByTradeNo(tradeNo, dbStatus);
+      payoutWebhookLogger.info('Withdrawl status updated in DB', { traceId, tradeNo, dbStatus });
+    }
   } catch (dbErr) {
     payoutErrorLogger.error('Failed to update withdrawl status in DB', {
       traceId, tradeNo, dbStatus, error: dbErr.message,

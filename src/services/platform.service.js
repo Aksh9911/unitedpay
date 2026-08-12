@@ -81,11 +81,11 @@ async function createDepositRecord({ userId, amount, orderId, traceId }) {
   return response.data;
 }
 
-async function updateWalletBalance({ userId, amount, traceId }) {
+async function updateWalletBalance({ userId, amount, cryptoname = 'INR', traceId }) {
   const url = `${PLATFORM_BASE_URL}/api/user/wallet/balance`;
   const body = {
     userId,
-    cryptoname: 'INR',
+    cryptoname: cryptoname || 'INR',
     balance: amount,
   };
 
@@ -190,4 +190,93 @@ async function processDepositSuccess({ userId, amount, orderId, traceId }) {
   }
 }
 
-module.exports = { processDepositSuccess, createDepositRecord, updateWalletBalance };
+/**
+ * Refund withdrawn amount on payout reject/fail via PUT /api/user/wallet/balance
+ * (same add-funds API as payin — exact amount, no bonus).
+ */
+async function refundFailedPayout({ userId, amount, cryptoname = 'INR', withdrawId, morderId, traceId }) {
+  const SEP = '====================================';
+  const refundAmount = Number(amount);
+
+  appLogger.info('Platform API: refundFailedPayout start', {
+    traceId,
+    userId,
+    amount: refundAmount,
+    cryptoname,
+    withdrawId,
+    morderId,
+    timestamp: new Date().toISOString(),
+  });
+
+  console.log(`\n${SEP}`);
+  console.log('  PLATFORM API — PAYOUT REFUND');
+  console.log(SEP);
+  console.log(`  TraceId    : ${traceId}`);
+  console.log(`  UserId     : ${userId}`);
+  console.log(`  WithdrawId : ${withdrawId}`);
+  console.log(`  MorderId   : ${morderId}`);
+  console.log(`  Amount     : ${refundAmount}`);
+  console.log(`${SEP}\n`);
+
+  try {
+    const result = await updateWalletBalance({
+      userId,
+      amount: refundAmount,
+      cryptoname,
+      traceId,
+    });
+
+    appLogger.info('Platform API: refundFailedPayout success', {
+      traceId,
+      userId,
+      amount: refundAmount,
+      withdrawId,
+      morderId,
+      response: result,
+      timestamp: new Date().toISOString(),
+    });
+
+    console.log(`\n${SEP}`);
+    console.log('  PLATFORM API — PAYOUT REFUND ✓');
+    console.log(SEP);
+    console.log(`  TraceId    : ${traceId}`);
+    console.log(`  UserId     : ${userId}`);
+    console.log(`  Amount     : ${refundAmount}`);
+    console.log(`${SEP}\n`);
+
+    return { success: true, data: result };
+  } catch (err) {
+    systemErrorLogger.error('Platform payout refund failed', {
+      traceId,
+      userId,
+      amount: refundAmount,
+      withdrawId,
+      morderId,
+      errorType: err.code || 'PLATFORM_REFUND_ERROR',
+      errorMessage: err.message,
+      stackTrace: err.stack,
+      timestamp: new Date().toISOString(),
+      action: 'MANUAL_INTERVENTION_REQUIRED',
+    });
+
+    console.error(`\n${SEP}`);
+    console.error('  [CRITICAL] PLATFORM PAYOUT REFUND FAILED');
+    console.error(SEP);
+    console.error(`  TraceId    : ${traceId}`);
+    console.error(`  UserId     : ${userId}`);
+    console.error(`  WithdrawId : ${withdrawId}`);
+    console.error(`  Amount     : ${refundAmount}`);
+    console.error(`  Error      : ${err.message}`);
+    console.error(`  *** MANUAL INTERVENTION REQUIRED ***`);
+    console.error(`${SEP}\n`);
+
+    throw err;
+  }
+}
+
+module.exports = {
+  processDepositSuccess,
+  createDepositRecord,
+  updateWalletBalance,
+  refundFailedPayout,
+};
